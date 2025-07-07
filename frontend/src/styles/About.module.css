@@ -1,0 +1,140 @@
+.about {
+  padding: 100px 0;
+  background: #f8f9fa;
+  width: 100%;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+.aboutContent {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 60px;
+  align-items: center;
+}
+
+.aboutText h2 {
+  font-size: 2.5rem;
+  margin-bottom: 30px;
+  color: #333;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.aboutText p {
+  font-size: 1.1rem;
+  color: #666;
+  line-height: 1.8;
+  margin-bottom: 40px;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 30px;
+}
+
+.stat {
+  text-align: center;
+  padding: 20px;
+  background: white;
+  border-radius: 10px;
+  transition: all 0.3s;
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.08);
+}
+
+.stat:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+}
+
+.stat h3 {
+  font-size: 2.5rem;
+  margin-bottom: 10px;
+  color: #667eea;
+  font-weight: 700;
+}
+
+.stat p {
+  color: #666;
+  font-weight: 500;
+  margin: 0;
+}
+
+.aboutImage {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.imageContainer {
+  width: 100%;
+  max-width: 400px;
+  height: 300px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+  position: relative;
+  overflow: hidden;
+}
+
+.imageContainer::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+}
+
+.placeholder {
+  text-align: center;
+  color: white;
+  z-index: 1;
+  position: relative;
+}
+
+.placeholder span {
+  font-size: 4rem;
+  display: block;
+  margin-bottom: 10px;
+}
+
+.placeholder p {
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+@media (max-width: 768px) {
+  .about {
+    padding: 60px 0;
+  }
+  
+  .aboutContent {
+    grid-template-columns: 1fr;
+    gap: 40px;
+  }
+  
+  .aboutText h2 {
+    font-size: 2rem;
+  }
+  
+  .stats {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  
+  .imageContainer {
+    height: 250px;
+  }
+}
