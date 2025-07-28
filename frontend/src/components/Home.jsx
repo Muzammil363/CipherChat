@@ -23,37 +23,10 @@ const Home = () => {
   const currentContact = useRef();
   const sharedSecretRef = useRef();
   const fileInputRef = useRef(null);
+  const typingTimer=useRef();
   const dispatch = useDispatch();
   const myPrivateKey = useSelector(state => state.privateKey.key);
   // socket connection
-
-  // useEffect(() => {
-  //   let token = localStorage.getItem("accessToken");
-  //   let socket = connectSocket(token);
-  //   if (socket.connected) {
-  //     console.log("Already connected with socket id:", socket.id);
-  //     setConnected(true);
-  //   }
-
-  //   const onConnect = () => {
-  //     console.log("Connected with socket id:", socket.id);
-  //     setConnected(true);
-  //   };
-
-  //   const onDisconnect = () => {
-  //     console.log("Disconnected from socket.");
-  //     setConnected(false);
-  //   };
-
-  //   socket.on("connect", onConnect);
-  //   socket.on("disconnect", onDisconnect);
-
-  //   // Cleanup
-  //   return () => {
-  //     socket.off("connect", onConnect);
-  //     socket.off("disconnect", onDisconnect);
-  //   };
-  // }, []);
 
   const handleReceive = (data) => {
     console.log("data received: ", data);
@@ -77,7 +50,22 @@ const Home = () => {
     }
   }
 
-  useSocketConnection(handleReceive, setSocket);
+  const handleTypingReceive=(from)=>{
+    if (from === currentContact.current.email) {
+    clearTimeout(typingTimer.current);
+    setIsTyping(true);
+    typingTimer.current = setTimeout(() => {
+      setIsTyping(false);
+    }, 2000);
+  }
+  }
+
+  const handleStopTyping=(from)=>{
+    if(from==currentContact.current.email) {
+      setIsTyping(false);
+    }
+  }
+  useSocketConnection(handleStopTyping,handleTypingReceive,handleReceive, setSocket);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -104,13 +92,6 @@ const Home = () => {
 
   useEffect(() => {
     if (selectedContact) {
-      // Simulate typing indicator
-      const typingTimer = setTimeout(() => {
-        setIsTyping(true);
-        setTimeout(() => setIsTyping(false), 2000);
-      }, 1000);
-
-      // updated shared secret 
       const otherPublicKey = selectedContact.publicKey;
       const sharedSecret = deriveSharedSecret(myPrivateKey, otherPublicKey);
       sharedSecretRef.current = sharedSecret;
@@ -185,6 +166,10 @@ const Home = () => {
     }
   };
 
+  const handleIsTyping = (e)=>{
+    socket.emit("typing",{to:currentContact.current.email});
+  }
+  
   return (
     <div className={styles.homeContainer}>
       {/* Navigation Bar */}
@@ -221,7 +206,7 @@ const Home = () => {
                 <div className={styles.contactInfo}>
                   <div className={styles.contactName}>{contact.fullName}</div>
                   <div className={styles.lastMessage}>{contact.lastMessage}</div>
-                  {/* this will be handled  */}
+                  {/* last message and unread counts will be handled  */}
                 </div>
                 <div className={styles.contactMeta}>
                   <div className={styles.messageTime}>{contact.time}</div>
@@ -313,6 +298,7 @@ const Home = () => {
                   type="text"
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
+                  onKeyUp={handleIsTyping}
                   placeholder="Type a message..."
                   className={styles.messageField}
                 />
