@@ -1,83 +1,69 @@
-// user profile fetching and updating
+import { apiRequest } from "./api";
 
-export const fetchProfile=async ()=>{
-    let res=await fetch('http://localhost:3000/user/profile',{
-        method:'GET',
-        credentials:'include'
-    });
-    let data=await res.json();
-    console.log(data);
-    return data;
-}
+export const fetchProfile = async () => {
+    return apiRequest("/user/profile");
+};
 
-export const updatePassword=async (oldPassword,newPassword)=>{
-    // work on this at last
-}
-
-export const updateName=async (newName)=>{
-    console.log("updating name to : ",newName);
-    let res=await fetch('http://localhost:3000/user/updateProfile',{
-        method:'PATCH',
-        credentials:'include',
-        headers:{
-            "Content-type":"application/json"
-        },
-        body:JSON.stringify({
-            fullName:newName
-        })
-    });
-    let data=await res.json();
-    if(res.status==200) {
-        return true;
-    }
-    return false;
-}
-
-export const updateProfile=async (url)=>{
-    let res=await fetch("http://localhost:3000/user/updateProfile",{
-        method:'PATCH',
-        credentials:'include',
-        headers:{
-            "content-type":"application/json"
-        },
-        body:JSON.stringify({
-            profilePic:url
-        })
-    });
-    if(res.status==200) {
-        return true;
-    }
-    return false;
-}
-
-export const getContacts=async ()=>{
-    let res=await fetch('http://localhost:3000/user/contacts',{
-        method:'GET',
-        credentials:'include',
-        headers:{
-            "Content-type":"application/json"
-        }
-    });
-    let data=await res.json();
-    if(res.status==200) {
-        return data.contacts;
-    }
+export const updatePassword = async (oldPassword, newPassword) => {
     return null;
-}
+};
 
-export const getToken=()=>{
-    let token=localStorage.getItem("accessToken");
-    return token;
-}
-
-export const clearUnread = async(clearTo)=> {
-    let res=await fetch(`http://localhost:3000/api/chat/clear/${clearTo}`,{
-        method:'PATCH',
-        credentials:'include',
-        headers:{
-            "content-type":"application/json"
-        }
+export const updateName = async (newName) => {
+    await apiRequest("/user/updateProfile", {
+        method: "PATCH",
+        body: JSON.stringify({ fullName: newName })
     });
-    if(res.status==200) return true;
-    return false;
-}
+    return true;
+};
+
+export const updateProfile = async (url) => {
+    await apiRequest("/user/updateProfile", {
+        method: "PATCH",
+        body: JSON.stringify({ profilePic: url })
+    });
+    return true;
+};
+
+export const getContacts = async () => {
+    const data = await apiRequest("/user/contacts");
+    return data.contacts;
+};
+
+export const getConversations = async () => {
+    const data = await apiRequest("/api/conversations");
+    return data.conversations;
+};
+
+export const getGroupMembers = async (chatId) => {
+    const data = await apiRequest(`/api/groups/${encodeURIComponent(chatId)}/members`);
+    return data.members;
+};
+
+export const createGroup = async ({ name, memberEmails }) => {
+    const data = await apiRequest("/api/groups", {
+        method: "POST",
+        body: JSON.stringify({ name, memberEmails })
+    });
+    return data.conversation;
+};
+
+export const leaveGroup = async (chatId) => {
+    await apiRequest(`/api/groups/${encodeURIComponent(chatId)}/leave`, {
+        method: "POST"
+    });
+    return true;
+};
+
+export const clearUnread = async (clearTo) => {
+    await apiRequest(`/api/chat/clear/${encodeURIComponent(clearTo)}`, {
+        method: "PATCH"
+    });
+    return true;
+};
+
+export const clearConversationUnread = async (chatId) => {
+    await apiRequest(`/api/chat/conversation/${encodeURIComponent(chatId)}/clear-unread`, {
+        method: "PATCH"
+    });
+    return true;
+};

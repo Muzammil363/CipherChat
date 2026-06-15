@@ -1,104 +1,40 @@
-import toast from "react-hot-toast";
-import { redirect } from "react-router-dom";
-export const sendRequest=async (email)=>{
-    let res=await fetch('http://localhost:3000/user/sendRequest',{
-        credentials:'include',
-        method:'POST',
-        headers:{
-            "Content-type":"application/json",
-        },
-        body:JSON.stringify({
-            email:email
-        })
+import { apiRequest } from "./api";
+
+export const sendRequest = async (email) => {
+    const data = await apiRequest("/user/sendRequest", {
+        method: "POST",
+        body: JSON.stringify({ email })
     });
-    let data=await res.json();
+    return data.message;
+};
 
-    if(res.status==200) {
-        toast.success(data.message);
-        return ;
-    }
-    else {
-        toast.error(data.message);
-        return ;
-    }
-}
+export const findRequests = async () => {
+    return apiRequest("/user/fetchRequests");
+};
 
-export const findRequests=async ()=>{
-    let res=await fetch('http://localhost:3000/user/fetchRequests',{
-        credentials:'include',
-        method:'GET',
-        headers:{
-            "Content-type":"application/json"
-        }
-    })
-    let data=await res.json();
-    if(res.status==500) {
-        toast.error(data.message);
-        return {requests:[],sentReq:[]}; 
-    }
-    return data;
-}
+export const findUser = async (query) => {
+    if (!query) return [];
+    const data = await apiRequest(`/user/find/${encodeURIComponent(query)}`);
+    return data.result;
+};
 
-export const findUser=async (query)=>{
-    let res=await fetch(`http://localhost:3000/user/find/${query}`,{
-        method:'GET',
-        credentials:'include',
-        headers:{
-            "Content-type":"application/json"
-        }
-    })
-    let data=await res.json();
-    if(res.status==401 || data.message =="Unauthorized") {
-        redirect('/auth');
-    }
-    if(res.status==500) {
-        toast.error(data.message);
-        return ;
-    }
-    return data;
-}
-
-export const acceptUser=async (email)=>{
-    let res=await fetch(`http://localhost:3000/user/acceptRequest/${email}`,{
-        method:'POST',
-        credentials:'include',
-        headers:{
-            "Content-type":"application/json"
-        }
+export const acceptUser = async (email) => {
+    await apiRequest(`/user/acceptRequest/${encodeURIComponent(email)}`, {
+        method: "POST"
     });
-    let data=await res.json();
-    if(res.status==200) {
-        declineRequest(email);
-        return true;
-    }
-    return false;
-}
+    return true;
+};
 
-export const declineRequest=async (email)=> {
-    let res=await fetch(`http://localhost:3000/user/declineRequest/${email}`,{
-        method:'DELETE',
-        credentials:'include',
-        headers:{
-            "Content-type":"application/json"
-        }
+export const declineRequest = async (email) => {
+    await apiRequest(`/user/declineRequest/${encodeURIComponent(email)}`, {
+        method: "DELETE"
     });
-    let data=await res.json();
+    return true;
+};
 
-    if(res.status==200) return true;
-    return false;
-    
-}
-
-export const cancelRequest=async (email)=>{
-    let res=await fetch(`http://localhost:3000/user/cancelRequest/${email}`,{
-        method:'DELETE',
-        credentials:'include',
-        headers:{
-            "Content-type":"application/json"
-        }
+export const cancelRequest = async (email) => {
+    await apiRequest(`/user/cancelRequest/${encodeURIComponent(email)}`, {
+        method: "DELETE"
     });
-    if(res.status==200) {
-        return true;
-    }
-    return false;
-}
+    return true;
+};

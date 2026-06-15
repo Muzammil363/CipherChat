@@ -3,10 +3,10 @@ import styles from '../styles/Auth.module.css';
 import { useNavigate } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
 import toast from 'react-hot-toast';
-import connectSocket from '../socket.js';
 import { authActions } from '../store/index.js';
-import { decryptKeyActions,privateKeyActions } from '../store/index.js';
+import { privateKeyActions } from '../store/index.js';
 import { getECDHKeyPairFromPIN } from '../services/Encryption.js';
+import { apiRequest } from '../services/api.js';
 
 const AuthComponent = () => {
     const navigate = useNavigate();
@@ -34,68 +34,44 @@ const AuthComponent = () => {
             return ;
         }
         const keys=getECDHKeyPairFromPIN(formData.pin);
-        // send public key to server on sign up and store private key on login/ signup in store
         if (isLogin) {
-            console.log('Login attempt:', { email: formData.email, password: formData.password });
-            let res = await fetch('http://localhost:3000/api/auth/login', {
-                method: 'POST',
-                credentials:'include',
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    email: formData.email,
-                    password: formData.password,
-                })
-            });
-            let data = await res.json();
-            if (res.status == 200) {
-                localStorage.removeItem("accessToken");
-                localStorage.setItem("accessToken", data.accessToken);
-
+            try {
+                await apiRequest('/api/auth/login', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        email: formData.email,
+                        password: formData.password,
+                    })
+                });
                 dispatch(privateKeyActions.setPrivateKey({privateKey:keys.privateKey}));
-
                 toast.success("Logged in Successfully");
                 dispatch(authActions.login());
                 navigate("/u/home");
-            }
-            else {
-                toast.error(data.message);
+            } catch (error) {
+                toast.error(error.message);
             }
 
         } else {
-            console.log('Signup attempt:', formData);
             if (formData.pin != formData.confirmPin) {
                 toast.error("Security PINS did not match");
                 return;
             }
-            let res = await fetch('http://localhost:3000/api/auth/signup', {
-                method: 'POST',
-                credentials:'include',
-                headers: {
-                    "Content-type": "application/json"
-                },
-                body: JSON.stringify({
-                    email: formData.email,
-                    fullName: formData.fullName,
-                    password: formData.password,
-                    publicKey:keys.publicKeyHex
-                })
-            })
-            let data = await res.json();
-            if (res.status == 200) {
+            try {
+                const data = await apiRequest('/api/auth/signup', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        email: formData.email,
+                        fullName: formData.fullName,
+                        password: formData.password,
+                        publicKey:keys.publicKeyHex
+                    })
+                });
                 toast.success(data.message);
-                localStorage.removeItem("accessToken");
-                localStorage.setItem("accessToken", data.accessToken);
-
                 dispatch(privateKeyActions.setPrivateKey({privateKey:keys.privateKey}))
-
                 dispatch(authActions.login());
                 navigate('/u/home');
-            }
-            else {
-                toast.error(data.message);
-                return;
+            } catch (error) {
+                toast.error(error.message);
             }
         }
     };

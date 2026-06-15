@@ -6,21 +6,17 @@ import { connectSocket } from '../socket.js';
 export const useSocketConnection = (handleStopTyping,handleTypingReceive,handleReceive,setSocket ,handleDeletedMessage) => {
   // const [connected,setConnected]=useState(false);
     useEffect(() => {
-      let token = localStorage.getItem("accessToken");
-      let socket = connectSocket(token);
+      let socket = connectSocket();
       if (socket.connected) {
-        console.log("Already connected with socket id:", socket.id);
         // setConnected(true);
       }
   
       const onConnect = () => {
-        console.log("Connected with socket id:", socket.id);
         setSocket(socket);
         // setConnected(true);
       };
   
       const onDisconnect = () => {
-        console.log("Disconnected from socket.");
         setSocket(null);
         // setConnected(false);
       };
@@ -30,7 +26,7 @@ export const useSocketConnection = (handleStopTyping,handleTypingReceive,handleR
       }
 
       const onTyping=(data)=>{
-        handleTypingReceive(data.from);
+        handleTypingReceive(data);
       }
       
       const onStopTyping=(data)=>{
@@ -38,14 +34,13 @@ export const useSocketConnection = (handleStopTyping,handleTypingReceive,handleR
       }
 
       const onDeletedId=(data)=>{
-        console.log("delete event occured");
-        console.log("data.id:", data.id);
         handleDeletedMessage(data.id);
       }
 
       socket.on("connect", onConnect);
       socket.on("disconnect", onDisconnect);
       socket.on("recieve",onRecieve);
+      socket.on("message:receive",onRecieve);
       socket.on("typing",onTyping);
       socket.on("stop-typing",onStopTyping);
       // Event name is correct ! OK 
@@ -55,6 +50,12 @@ export const useSocketConnection = (handleStopTyping,handleTypingReceive,handleR
       return () => {
         socket.off("connect", onConnect);
         socket.off("disconnect", onDisconnect);
+        socket.off("recieve", onRecieve);
+        socket.off("message:receive", onRecieve);
+        socket.off("typing", onTyping);
+        socket.off("stop-typing", onStopTyping);
+        socket.off("deletedId", onDeletedId);
+        socket.disconnect();
       };
     }, []);
 };

@@ -6,9 +6,26 @@ const chatSchema = new mongoose.Schema({
     required: true,
     unique: true
   },
+  type: {
+    type: String,
+    enum: ["direct", "group"],
+    default: "direct"
+  },
+  name: {
+    type: String,
+    default: ""
+  },
+  createdBy: {
+    type: String,
+    default: ""
+  },
   members: {
     type: [String],
     required: true
+  },
+  leftMembers: {
+    type: [String],
+    default: []
   },
   lastMessage: {
     message: String,
@@ -28,6 +45,6 @@ const chatSchema = new mongoose.Schema({
   }
 }, { timestamps: true });
 
-chatSchema.index({ chatId: 1 });
+chatSchema.index({ members: 1, type: 1 });
 
 export const Chat = mongoose.model("Chat", chatSchema);

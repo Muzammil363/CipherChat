@@ -26,12 +26,7 @@ function PhotoModalComp({setShowPasswordModal}) {
             toast("Password must be atleast 6 characters long");
             return;
         }
-        // Here you would typically make an API call to change the password
-        console.log('Password change request:', {
-            currentPassword: passwordData.currentPassword,
-            newPassword: passwordData.newPassword
-        });
-        alert('Password changed successfully!');
+        toast('Password update is not implemented yet');
         setShowPasswordModal(false);
         setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
     };

@@ -1,350 +1,395 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useSelector, useDispatch } from 'react-redux';
+import React, { useEffect, useRef, useState } from 'react';
+import { useSelector } from 'react-redux';
 import styles from '../styles/Home.module.css';
-import { getContacts } from '../services/User.js';
 import toast from 'react-hot-toast';
-import { connectSocket } from '../socket.js';
 import { useSocketConnection } from '../hooks/useSocketConnection.js';
-import { decryptKeyActions, privateKeyActions } from '../store/index.js';
 import { deriveSharedSecret, encryptWithAES, decryptWithAES } from '../services/Encryption.js';
 import { uploadImageToCloudinary } from '../services/CloudinaryUpload.js';
-import { clearUnread } from '../services/User.js';
+import {
+  clearConversationUnread,
+  createGroup,
+  getContacts,
+  getConversations,
+  getGroupMembers,
+  leaveGroup
+} from '../services/User.js';
 import { clearChat, deleteContact, deleteMessage } from '../services/Delete.js';
-import { decryptAll, loadConversation } from '../services/Loaders.js';
-import { use } from 'react';
+import { loadConversation } from '../services/Loaders.js';
+
+const messageTime = () => new Date().toLocaleString('en-US', {
+  month: 'short',
+  day: '2-digit',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: true,
+});
 
 const Home = () => {
-  const [selectedContact, setSelectedContact] = useState(null);
+  const [selectedConversation, setSelectedConversation] = useState(null);
   const [showConversation, setShowConversation] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [searched, setSearched] = useState('');
-  const [searchedContacts, setSearchedContacts] = useState([]);
-  const [socket, setSocket] = useState({});
+  const [socket, setSocket] = useState(null);
   const [message, setMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [messages, setMessages] = useState([]);
+  const [conversations, setConversations] = useState([]);
   const [contacts, setContacts] = useState([]);
+  const [groupMembers, setGroupMembers] = useState([]);
   const [cursor, setCursor] = useState(null);
   const [hasMore, setHasMore] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
+  const [showGroupForm, setShowGroupForm] = useState(false);
+  const [groupName, setGroupName] = useState('');
+  const [selectedGroupEmails, setSelectedGroupEmails] = useState([]);
 
   const messageBoxRef = useRef();
-  const currentContact = useRef();
-  const sharedSecretRef = useRef();
-  const fileInputRef = useRef(null);
+  const currentConversation = useRef();
   const typingTimer = useRef();
+  const fileInputRef = useRef(null);
 
-  const dispatch = useDispatch();
   const myPrivateKey = useSelector(state => state.privateKey.key);
+  const currentUser = useSelector(state => state.auth.user);
 
-  /*
-    Handlers for socket events
-  */
+  const refreshConversations = async () => {
+    try {
+      const [conversationData, contactData] = await Promise.all([getConversations(), getContacts()]);
+      setConversations(conversationData);
+      setContacts(contactData);
+    } catch (error) {
+      toast.error(error.message || 'Error while fetching conversations');
+    }
+  };
+
+  const senderPublicKey = (senderEmail, membersOverride = groupMembers) => {
+    const activeConversation = currentConversation.current || selectedConversation;
+    if (senderEmail === currentUser?.email) return currentUser.publicKey;
+    if (activeConversation?.type === 'direct') return activeConversation.publicKey;
+    return membersOverride.find(member => member.email === senderEmail)?.publicKey;
+  };
+
+  const decryptMessage = (serverMessage, membersOverride) => {
+    const publicKey = senderPublicKey(serverMessage.sender, membersOverride);
+    if (!publicKey || !myPrivateKey) return null;
+    const sharedSecret = deriveSharedSecret(myPrivateKey, publicKey);
+    const decryptedMessage = JSON.parse(decryptWithAES(serverMessage.message, sharedSecret));
+    return {
+      _id: serverMessage._id,
+      message: decryptedMessage,
+      sender: serverMessage.sender
+    };
+  };
+
+  const encryptForMembers = (plainMessage, members) => {
+    return members.map(member => {
+      const sharedSecret = deriveSharedSecret(myPrivateKey, member.publicKey);
+      return {
+        userEmail: member.email,
+        ciphertext: encryptWithAES(JSON.stringify(plainMessage), sharedSecret)
+      };
+    });
+  };
+
+  const activeMembersForSelected = async () => {
+    if (!selectedConversation) return [];
+    if (selectedConversation.type === 'direct') {
+      return [
+        {
+          email: currentUser.email,
+          publicKey: currentUser.publicKey
+        },
+        {
+          email: selectedConversation.email,
+          publicKey: selectedConversation.publicKey
+        }
+      ];
+    }
+
+    if (groupMembers.length > 0) return groupMembers;
+    const members = await getGroupMembers(selectedConversation.chatId);
+    setGroupMembers(members);
+    return members;
+  };
+
+  const loadMessages = async (reset = false, membersOverride = groupMembers) => {
+    if (!currentConversation.current || isLoading || (!hasMore && !reset)) return;
+    setIsLoading(true);
+    try {
+      const data = await loadConversation(currentConversation.current.chatId, reset ? null : cursor);
+      const decrypted = data.messages
+        .map(messageItem => decryptMessage(messageItem, membersOverride))
+        .filter(Boolean)
+        .reverse();
+      setMessages(prev => reset ? decrypted : [...decrypted, ...prev]);
+      setCursor(data.nextCursor);
+      setHasMore(!!data.nextCursor);
+    } catch (error) {
+      toast.error(error.message || 'Could not load messages');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleReceive = (data) => {
-    const curContactVal = currentContact.current;
-    let from = data.fromMail;
-
-    if (curContactVal && from == curContactVal.email && data.message) {
-      const decryptedMessage = JSON.parse(decryptWithAES(data.message, sharedSecretRef.current));
-      let newMessagePart = {
-        text: decryptedMessage.text,
-        image: decryptedMessage.image,
-        time: decryptedMessage.time,
-        id: data.time,
-      }
-      let newMessage = {
-        message: newMessagePart,
-        sender: data.fromMail
-      }
-      setMessages((prev) => [...prev, newMessage]);
-    }
-  }
-
-  const handleTypingReceive = (from) => {
-    if (from === currentContact.current.email) {
-      clearTimeout(typingTimer.current);
-      setIsTyping(true);
-      typingTimer.current = setTimeout(() => {
-        setIsTyping(false);
-      }, 2000);
-    }
-  }
-
-  const handleStopTyping = (from) => {
-    if (from == currentContact.current.email) {
-      setIsTyping(false);
-    }
-  }
-
-  const loadMessages = async () => {
-    if (isLoading || !hasMore) {
+    const activeConversation = currentConversation.current;
+    const receivedChatId = data.chatId || data.conversationId;
+    if (!activeConversation || activeConversation.chatId !== receivedChatId) {
+      refreshConversations();
       return;
     }
 
-    setIsLoading(true);
-    const data = await loadConversation(currentContact.current.email, cursor);
-    const decrypted = decryptAll(data.messages, sharedSecretRef.current);
-    setMessages(prev => [...decrypted.reverse(), ...prev]);
-    setCursor(data.nextCursor);
-    setHasMore(!!data.nextCursor);
-    setIsLoading(false);
+      const decrypted = decryptMessage(data.message);
+    if (decrypted) {
+      setMessages(prev => [...prev, decrypted]);
+    }
   };
 
-  const handleDeletedMessage = (_id) => {
-    try {
-      setMessages((prevMessages) => {
-        const updated = prevMessages.filter(msg => {
-          const currentId = msg.message?.id || msg.id || msg._id;
-          return String(currentId) !== String(_id);
-        });
-        return updated;
-      });
+  const handleTypingReceive = ({ from, chatId } = {}) => {
+    if (!currentConversation.current || currentConversation.current.chatId !== chatId) return;
+    clearTimeout(typingTimer.current);
+    setIsTyping(true);
+    typingTimer.current = setTimeout(() => setIsTyping(false), 2000);
+  };
 
-      toast("Message deleted by sender");
-    } catch (error) {
-      console.error("Delete handler error:", error);
-    }
+  const handleStopTyping = () => setIsTyping(false);
+
+  const handleDeletedMessage = (_id) => {
+    setMessages(prev => prev.filter(msg => String(msg.message?.id || msg._id) !== String(_id)));
+    toast('Message deleted by sender');
   };
 
   useSocketConnection(handleStopTyping, handleTypingReceive, handleReceive, setSocket, handleDeletedMessage);
 
   useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth <= 768);
-    };
-
+    const checkMobile = () => setIsMobile(window.innerWidth <= 768);
     checkMobile();
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
-  }, []); // for responsive
+  }, []);
 
   useEffect(() => {
-    if (messageBoxRef.current) {
-      const msgArea = messageBoxRef.current;
-      const handleScroll = async () => {
-        if (msgArea.scrollTop === 0) {
-          await loadMessages();
-        }
-      };
-
-      msgArea.addEventListener('scroll', handleScroll);
-      return () => msgArea.removeEventListener('scroll', handleScroll);
-    }
-  }, [cursor, hasMore]);
+    refreshConversations();
+  }, []);
 
   useEffect(() => {
-    async function loadContacts() {
-      let res = await getContacts();
-      if (res) {
-        setContacts(res);
-      }
-      else {
-        toast.error("Error while fetching contacts");
-      }
+    const msgArea = messageBoxRef.current;
+    if (!msgArea) return;
+    const handleScroll = async () => {
+      if (msgArea.scrollTop === 0) await loadMessages();
+    };
+    msgArea.addEventListener('scroll', handleScroll);
+    return () => msgArea.removeEventListener('scroll', handleScroll);
+  }, [cursor, hasMore, isLoading]);
+
+  const handleConversationSelect = async (conversation) => {
+    if (!myPrivateKey) {
+      toast.error('Enter your PIN by logging in again to decrypt messages');
+      return;
     }
-    loadContacts();
-  }, [])
 
-  useEffect(() => {
-    if (selectedContact) {
-      const otherPublicKey = selectedContact.publicKey;
-      const sharedSecret = deriveSharedSecret(myPrivateKey, otherPublicKey);
-      sharedSecretRef.current = sharedSecret;
-
-      setCursor(null);
-      setHasMore(true);
-
-      async function clear() {
-        let clearTo = currentContact.current.email;
-
-        let data = await loadConversation(clearTo, null);
-        setCursor(data.nextCursor);
-        const decrypted = decryptAll(data.messages, sharedSecretRef.current);
-        setMessages(decrypted.reverse());
-
-        let res = await clearUnread(clearTo);
-        if (res) {
-          for (let i = 0; i < contacts.length; i++) {
-            if (contacts[i].email === clearTo) {
-              contacts[i].unread = 0;
-              break;
-            }
-          }
-        }
-      }
-
-      clear();
-    }
-  }, [selectedContact]);
-
-
-  const handleContactSelect = (contact) => {
-    if(currentContact.current !=null && currentContact.current === contact) {
-      return ;
-    }
-    setSelectedContact(contact);
+    setSelectedConversation(conversation);
+    currentConversation.current = conversation;
     setMessages([]);
-    currentContact.current = contact;
-    if (isMobile) {
-      setShowConversation(true);
+    setCursor(null);
+    setHasMore(true);
+    setGroupMembers([]);
+    if (isMobile) setShowConversation(true);
+
+    try {
+      let membersForDecrypt = groupMembers;
+      if (conversation.type === 'group') {
+        const members = await getGroupMembers(conversation.chatId);
+        setGroupMembers(members);
+        membersForDecrypt = members;
+      }
+      await clearConversationUnread(conversation.chatId);
+      await loadMessages(true, membersForDecrypt);
+    } catch (error) {
+      toast.error(error.message || 'Could not open conversation');
     }
   };
 
-  const handleBackToContacts = () => {
+  const handleBackToConversations = () => {
     setShowConversation(false);
-    setSelectedContact(null);
+    setSelectedConversation(null);
+    currentConversation.current = null;
+  };
+
+  const sendPreparedMessage = async (plainMessage) => {
+    if (!selectedConversation || !socket) return;
+    const members = await activeMembersForSelected();
+    const encryptedFor = encryptForMembers(plainMessage, members);
+
+    socket.emit('message:send', {
+      conversationId: selectedConversation.chatId,
+      chatId: selectedConversation.chatId,
+      encryptedFor,
+      time: plainMessage.id
+    });
+
+    setMessages(prev => [...prev, { message: plainMessage, sender: currentUser.email }]);
+    setMessage('');
+    refreshConversations();
+  };
+
+  const handleSendMessage = async (e) => {
+    e.preventDefault();
+    if (!message.trim()) return;
+    try {
+      await sendPreparedMessage({
+        id: Date.now(),
+        text: message,
+        image: null,
+        time: messageTime()
+      });
+    } catch (error) {
+      toast.error(error.message || 'Unable to send message');
+    }
   };
 
   const handleFileChange = async (event) => {
     const file = event.target.files[0];
-    if (file) {
-      console.log("Selected file:", file);
-      try {
-        console.log("trying upload");
-        let url = await uploadImageToCloudinary(file);
-        console.log("uploadeed");
-        if (url) {
-          // set message
-          if (selectedContact) {
-            const newMessage = {
-              id: Date.now(),
-              text: null,
-              image: url,
-              sender: 'me',
-              time: new Date().toLocaleString('en-US', {
-                month: 'short',
-                day: '2-digit',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-                hour12: true, // optional: for AM/PM
-              })
-            }
-
-            const encryptedMessage = encryptWithAES(JSON.stringify(newMessage), sharedSecretRef.current);
-            socket.emit("send", { message: encryptedMessage, time: newMessage.id, sendTo: selectedContact.email });
-            const addMessage = {
-              message: newMessage,
-              sender: 'me'
-            }
-            setMessages((prev) => [...prev, addMessage]);
-            setMessage('');
-          }
-        }
-      } catch (err) {
-        toast.error("Error while sending image");
-      }
-      // You can upload the file or show preview here
-    }
-  };
-
-  const handleSendMessage = (e) => {
-    e.preventDefault();
-    if (message.trim() && selectedContact) {
-      const newMessage = {
+    if (!file) return;
+    try {
+      const url = await uploadImageToCloudinary(file);
+      await sendPreparedMessage({
         id: Date.now(),
-        text: message,
-        image: null,
-        sender: 'me',
-        time: new Date().toLocaleString('en-US', {
-          month: 'short',
-          day: '2-digit',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: true,
-        })
-      };
-      const encryptedMessage = encryptWithAES(JSON.stringify(newMessage), sharedSecretRef.current);
-      socket.emit("send", { message: encryptedMessage, time: newMessage.id, sendTo: selectedContact.email });
-      const addMessage = {
-        mid: newMessage.id,
-        message: newMessage,
-        sender: 'me'
-      }
-      setMessages((prev) => [...prev, addMessage]);
-      setMessage('');
+        text: null,
+        image: url,
+        time: messageTime()
+      });
+    } catch (error) {
+      toast.error('Error while sending image');
     }
   };
 
-  const handleIsTyping = (e) => {
-    socket.emit("typing", { to: currentContact.current.email });
-  }
-
-  const handleContactSearch = (e) => {
-    let value = e.target.value;
-    setSearched(value);
-    const filtered = contacts.filter(contact =>
-      contact.fullName.toLowerCase().startsWith(value.toLowerCase())
-    );
-    setSearchedContacts(filtered);
-  }
+  const handleIsTyping = () => {
+    if (!socket || !selectedConversation) return;
+    socket.emit('typing:start', { conversationId: selectedConversation.chatId, chatId: selectedConversation.chatId });
+  };
 
   const handleContactDelete = async () => {
-    const toDelete = currentContact.current.email;
-    let cnf = confirm("You both will be no longer friends by Deleting contact!!");
-    if (!cnf) {
-      return;
-    }
-    let res = await deleteContact(toDelete);
-    if (!res) {
-      toast.error("Cannot delete contact");
-      return;
-    }
-    if (currentContact.current.email === toDelete) {
-      currentContact.current = null;
-      setSelectedContact(null);
+    if (!selectedConversation || selectedConversation.type !== 'direct') return;
+    if (!confirm('Delete this contact and chat permanently?')) return;
+    try {
+      await deleteContact(selectedConversation.email);
+      setSelectedConversation(null);
+      currentConversation.current = null;
       setMessages([]);
+      await refreshConversations();
+      toast.success('Deleted contact successfully');
+    } catch (error) {
+      toast.error(error.message || 'Cannot delete contact');
     }
-
-    let updatedContacts = contacts.filter(u => u.email != toDelete);
-    setContacts(updatedContacts);
-    toast.success("Deleted contact successfully");
-  }
+  };
 
   const handleClearChat = async () => {
-    const toClear = currentContact.current.email;
-    let cnf = confirm("Clear chat will delete messages permanently for both users and cannot");
-    if (!cnf) {
-      return;
+    if (!selectedConversation || selectedConversation.type !== 'direct') return;
+    if (!confirm('Clear this chat permanently for both users?')) return;
+    try {
+      await clearChat(selectedConversation.email);
+      setMessages([]);
+      toast.success('Chat cleared');
+    } catch (error) {
+      toast.error(error.message || 'Cannot clear chat');
     }
-    let res = await clearChat(toClear);
-    if (!res) {
-      toast.error("Cannot clear chat");
-      return;
+  };
+
+  const handleLeaveGroup = async () => {
+    if (!selectedConversation || selectedConversation.type !== 'group') return;
+    if (!confirm('Leave this group?')) return;
+    try {
+      await leaveGroup(selectedConversation.chatId);
+      setSelectedConversation(null);
+      currentConversation.current = null;
+      setMessages([]);
+      await refreshConversations();
+      toast.success('Left group');
+    } catch (error) {
+      toast.error(error.message || 'Cannot leave group');
     }
-    setMessages([]);
-    toast.success("Chat cleared");
-  }
+  };
 
   const handleDeleteMessage = async (id) => {
-    let cnf = confirm("Delete message for everyone permanently?");
-    if (!cnf) return;
-
-    let res = await deleteMessage(id);
-    if (res) {
-      let updatedMessages = messages.filter(msg => msg.message.id != id);
-      socket.emit("deleted", { id: id, to: currentContact.current.email });
-
-      setMessages(updatedMessages);
-      toast.success("Message Deleted for everyone");
-      return;
+    if (!confirm('Delete message for everyone permanently?')) return;
+    try {
+      await deleteMessage(id);
+      setMessages(prev => prev.filter(msg => msg.message.id !== id));
+      if (selectedConversation?.type === 'direct') {
+        socket?.emit('deleted', { id, to: selectedConversation.email });
+      }
+      toast.success('Message deleted');
+    } catch (error) {
+      toast.error(error.message || 'Cannot delete message');
     }
-    toast.error("Cannot Delete");
-  }
+  };
+
+  const handleCreateGroup = async (e) => {
+    e.preventDefault();
+    try {
+      await createGroup({ name: groupName, memberEmails: selectedGroupEmails });
+      setGroupName('');
+      setSelectedGroupEmails([]);
+      setShowGroupForm(false);
+      await refreshConversations();
+      toast.success('Group created');
+    } catch (error) {
+      toast.error(error.message || 'Cannot create group');
+    }
+  };
+
+  const toggleGroupMember = (email) => {
+    setSelectedGroupEmails(prev => (
+      prev.includes(email) ? prev.filter(item => item !== email) : [...prev, email]
+    ));
+  };
+
+  const displayedConversations = conversations.filter(conversation =>
+    (conversation.name || conversation.fullName || '')
+      .toLowerCase()
+      .startsWith(searched.toLowerCase())
+  );
+
+  const displaySenderName = (email) => {
+    if (email === currentUser?.email) return 'Me';
+    if (selectedConversation?.type === 'direct') return selectedConversation.fullName;
+    return groupMembers.find(member => member.email === email)?.fullName || email;
+  };
+
   return (
     <div className={styles.homeContainer}>
-      {/* Navigation Bar */}
-
-      {/* Main Chat Interface */}
       <div className={styles.chatContainer}>
-        {/* Contacts Sidebar */}
         <div className={`${styles.contactsSidebar} ${isMobile && showConversation ? styles.hidden : ''}`}>
           <div className={styles.contactsHeader}>
             <h3>Messages</h3>
-            <button className={styles.newChatBtn}>+</button>
+            <button className={styles.newChatBtn} onClick={() => setShowGroupForm(prev => !prev)}>+</button>
           </div>
+
+          {showGroupForm && (
+            <form className={styles.groupForm} onSubmit={handleCreateGroup}>
+              <input
+                type="text"
+                placeholder="Group name"
+                className={styles.searchInput}
+                value={groupName}
+                onChange={(e) => setGroupName(e.target.value)}
+              />
+              <div className={styles.groupMemberList}>
+                {contacts.map(contact => (
+                  <label key={contact.email} className={styles.groupMemberItem}>
+                    <input
+                      type="checkbox"
+                      checked={selectedGroupEmails.includes(contact.email)}
+                      onChange={() => toggleGroupMember(contact.email)}
+                    />
+                    <span>{contact.fullName}</span>
+                  </label>
+                ))}
+              </div>
+              <button type="submit" className={styles.actionBtn}>Create group</button>
+            </form>
+          )}
 
           <div className={styles.searchBar}>
             <input
@@ -352,120 +397,94 @@ const Home = () => {
               placeholder="Search conversations..."
               className={styles.searchInput}
               value={searched}
-              onChange={handleContactSearch}
+              onChange={(e) => setSearched(e.target.value)}
             />
           </div>
 
           <div className={styles.contactsList}>
-            {searched.length == 0 ? contacts.map(contact => (
+            {displayedConversations.map(conversation => (
               <div
-                key={contact.chatId}
-                className={`${styles.contactItem} ${selectedContact && selectedContact.chatId === contact.chatId ? styles.active : ''}`}
-                onClick={() => handleContactSelect(contact)}
+                key={conversation.chatId}
+                className={`${styles.contactItem} ${selectedConversation?.chatId === conversation.chatId ? styles.active : ''}`}
+                onClick={() => handleConversationSelect(conversation)}
               >
                 <div className={styles.contactAvatar}>
-                  <span><img src={contact.profilePic} alt="" className={styles.profilePhoto} /></span>
-                  {contact.online && <div className={styles.onlineIndicator}></div>}
+                  {conversation.profilePic
+                    ? <span><img src={conversation.profilePic} alt="" className={styles.profilePhoto} /></span>
+                    : <span>{conversation.type === 'group' ? 'G' : 'U'}</span>}
+                  {conversation.online && <div className={styles.onlineIndicator}></div>}
                 </div>
                 <div className={styles.contactInfo}>
-                  <div className={styles.contactName}>{contact.fullName}</div>
-                  <div className={styles.lastMessage}>{contact.lastMessage}</div>
+                  <div className={styles.contactName}>{conversation.name || conversation.fullName}</div>
+                  <div className={styles.lastMessage}>{conversation.type === 'group' ? `${conversation.memberCount} members` : conversation.lastMessage}</div>
                 </div>
                 <div className={styles.contactMeta}>
-                  <div className={styles.messageTime}>{contact.time}</div>
-                  {contact.unread > 0 && (
-                    <div className={styles.unreadBadge}>{contact.unread}</div>
-                  )}
+                  {conversation.unread > 0 && <div className={styles.unreadBadge}>{conversation.unread}</div>}
                 </div>
               </div>
-            )) :
-              searchedContacts.map(contact => (
-                <div
-                  key={contact.chatId}
-                  className={`${styles.contactItem} ${selectedContact && selectedContact.chatId === contact.chatId ? styles.active : ''}`}
-                  onClick={() => handleContactSelect(contact)}
-                >
-                  <div className={styles.contactAvatar}>
-                    <span><img src={contact.profilePic} alt="" className={styles.profilePhoto} /></span>
-                    {/* to be handled with user profile image  */}
-                    {contact.online && <div className={styles.onlineIndicator}></div>}
-                  </div>
-                  <div className={styles.contactInfo}>
-                    <div className={styles.contactName}>{contact.fullName}</div>
-                    <div className={styles.lastMessage}>{contact.lastMessage}</div>
-                    {/* last message and unread counts will be handled  */}
-                  </div>
-                  <div className={styles.contactMeta}>
-                    <div className={styles.messageTime}>{contact.time}</div>
-                    {contact.unread > 0 && (
-                      <div className={styles.unreadBadge}>{contact.unread}</div>
-                    )}
-                  </div>
-                </div>
-              ))}
+            ))}
           </div>
         </div>
 
-        {/* Conversation Area */}
         <div className={`${styles.conversationArea} ${isMobile && !showConversation ? styles.hidden : ''}`}>
-          {selectedContact ? (
+          {selectedConversation ? (
             <>
-              {/* Conversation Header */}
               <div className={styles.conversationHeader}>
                 {isMobile && (
-                  <button
-                    className={styles.backBtn}
-                    onClick={handleBackToContacts}
-                  >
-                    ←
-                  </button>
+                  <button className={styles.backBtn} onClick={handleBackToConversations}>Back</button>
                 )}
                 <div className={styles.contactAvatar}>
-                  {/* <span>{selectedContact.profilePic}</span> this is replaced*/}
-                  <span> <img src={selectedContact.profilePic} alt="" className={styles.profilePhoto} /></span>
-                  {selectedContact.online && <div className={styles.onlineIndicator}></div>}
+                  {selectedConversation.profilePic
+                    ? <span><img src={selectedConversation.profilePic} alt="" className={styles.profilePhoto} /></span>
+                    : <span>{selectedConversation.type === 'group' ? 'G' : 'U'}</span>}
+                  {selectedConversation.online && <div className={styles.onlineIndicator}></div>}
                 </div>
                 <div className={styles.contactDetails}>
-                  <h4>{selectedContact.fullName}</h4>
+                  <h4>{selectedConversation.name || selectedConversation.fullName}</h4>
                   <span className={styles.status}>
-                    {selectedContact.status === 'online' ? 'Online' : selectedContact.lastSeen}
+                    {selectedConversation.type === 'group'
+                      ? `${groupMembers.length || selectedConversation.memberCount} members`
+                      : selectedConversation.online ? 'Online' : selectedConversation.lastSeen}
                   </span>
                 </div>
                 <div className={styles.conversationActions}>
-                  <button
-                    className={styles.actionBtn}
-                    onClick={handleContactDelete}
-                  >Delete Contact
-                  </button>
-
-                  <button
-                    className={styles.actionBtn}
-                    onClick={handleClearChat}
-                  >Delete Chat
-                  </button>
+                  {selectedConversation.type === 'direct' ? (
+                    <>
+                      <button className={styles.actionBtn} onClick={handleContactDelete}>Delete Contact</button>
+                      <button className={styles.actionBtn} onClick={handleClearChat}>Delete Chat</button>
+                    </>
+                  ) : (
+                    <button className={styles.actionBtn} onClick={handleLeaveGroup}>Leave Group</button>
+                  )}
                 </div>
               </div>
 
-              {/* Messages Area */}
               <div ref={messageBoxRef} className={styles.messagesArea}>
                 {isLoading && <p className={styles.loader}>Loading...</p>}
                 {messages.map(msg => (
                   <div
                     key={msg._id || msg.message.id}
-                    className={`${styles.message} ${msg.sender !== currentContact.current.email ? styles.myMessage : styles.otherMessage}`}
+                    className={`${styles.message} ${msg.sender === currentUser?.email ? styles.myMessage : styles.otherMessage}`}
                   >
                     <div className={styles.messageContent}>
-
+                      {selectedConversation.type === 'group' && (
+                        <strong className={styles.senderName}>{displaySenderName(msg.sender)}</strong>
+                      )}
                       {msg.message.text && <p>{msg.message.text}</p>}
-                      {msg.message.image && <a href={msg.message.image} target="_blank">
-                        <img src={msg.message.image} alt='Cannot load image' className={styles.photo} />
-                      </a>}
+                      {msg.message.image && (
+                        <a href={msg.message.image} target="_blank" rel="noreferrer">
+                          <img src={msg.message.image} alt="Attachment" className={styles.photo} />
+                        </a>
+                      )}
                       <span className={styles.messageTime}>{msg.message.time}</span>
-                      <div
-                        className={msg.sender === currentContact.current.email && styles.hidden}
-                        style={{ cursor: 'pointer', color: 'red' }}
-                        onClick={() => { handleDeleteMessage(msg.message.id) }}
-                      >🗑️</div>
+                      {msg.sender === currentUser?.email && (
+                        <div
+                          style={{ cursor: 'pointer', color: 'red' }}
+                          onClick={() => handleDeleteMessage(msg.message.id)}
+                        >
+                          Delete
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -477,21 +496,18 @@ const Home = () => {
                       <span></span>
                       <span></span>
                     </div>
-                    <span className={styles.typingText}>{selectedContact.fullName} is typing...</span>
+                    <span className={styles.typingText}>Typing...</span>
                   </div>
                 )}
-
-                {/* {isLoading && <p className={styles.loader}>Loading...</p>} */}
               </div>
 
-              {/* Message Input */}
               <form className={styles.messageInput} onSubmit={handleSendMessage}>
                 <button
                   type="button"
                   className={styles.changePhotoBtn}
                   onClick={() => fileInputRef.current.click()}
                 >
-                  📎
+                  Attach
                 </button>
                 <input
                   type="file"
@@ -508,15 +524,14 @@ const Home = () => {
                   placeholder="Type a message..."
                   className={styles.messageField}
                 />
-                <button type="button" className={styles.emojiBtn}>😊</button>
-                <button type="submit" className={styles.sendBtn}>➤</button>
+                <button type="submit" className={styles.sendBtn}>Send</button>
               </form>
             </>
           ) : (
             <div className={styles.noConversation}>
-              <div className={styles.noConversationIcon}>💬</div>
+              <div className={styles.noConversationIcon}>Chat</div>
               <h3>Select a conversation</h3>
-              <p>Choose a contact from the sidebar to start chatting</p>
+              <p>Choose a contact or group from the sidebar to start chatting</p>
             </div>
           )}
         </div>

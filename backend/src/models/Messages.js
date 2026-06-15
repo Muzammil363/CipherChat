@@ -16,7 +16,15 @@ const messageSchema=new mongoose.Schema({
     },
     message: {
         type:String,
-        required:true
+    },
+    encryptedFor: {
+        type: [
+            {
+                userEmail: { type: String, required: true },
+                ciphertext: { type: String, required: true }
+            }
+        ],
+        default: []
     },
     createdAt:{
         type:String,

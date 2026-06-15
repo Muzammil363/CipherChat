@@ -1,8 +1,4 @@
-import { meta } from "@eslint/js";
-
 export async function uploadImageToCloudinary(file) {
-    console.log(import.meta.env);
-    console.log("in upload function")
   const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
   const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
 

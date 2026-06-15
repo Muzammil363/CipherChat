@@ -2,13 +2,20 @@ import { createSlice,configureStore } from "@reduxjs/toolkit";
 
 const authSlice=createSlice({
     name:'auth',
-    initialState:{isAuthenticated:false},
+    initialState:{isAuthenticated:false,user:null,isChecking:true},
     reducers:{
-        login(state) {
+        login(state, action) {
             state.isAuthenticated=true;
+            state.user=action.payload?.user || state.user;
+            state.isChecking=false;
         },
         logout(state) {
             state.isAuthenticated=false;
+            state.user=null;
+            state.isChecking=false;
+        },
+        finishChecking(state) {
+            state.isChecking=false;
         }
     }
 });

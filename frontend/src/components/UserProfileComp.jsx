@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react'
+import React from 'react'
 import styles from '../styles/Profile.module.css'
 import { useRef } from 'react';
 import toast from 'react-hot-toast';
@@ -6,15 +6,11 @@ import { uploadImageToCloudinary } from '../services/CloudinaryUpload';
 import { updateProfile } from '../services/User';
 
 function UserProfileComp({ user,setRefetch }) {
-    useEffect(()=>{
-        console.log("updated user: ",user);
-    },[user]);
     const fileInputRef = useRef(null);
 
     const handleFileChange = async (event) => {
         const file = event.target.files[0];
         if (file) {
-            console.log("Selected file:", file);
             try {
                 let url = await uploadImageToCloudinary(file);
                 let res = await updateProfile(url);
@@ -23,7 +19,6 @@ function UserProfileComp({ user,setRefetch }) {
                     setRefetch(true);
                 }
             } catch (err) {
-                console.log(err);
                 toast.error("Error while updating profile pic");
             }
         }

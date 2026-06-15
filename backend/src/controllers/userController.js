@@ -6,10 +6,9 @@ import { generateChatId } from '../utils/chat.js'
 import { Chat } from '../models/ChatData.js';
 import moment from "moment"
 import { Messages } from '../models/Messages.js';
+import { ensureDirectConversation } from './conversationController.js';
 
 export const profile = async (req, res) => {
-    console.log("req.user in profile: ", req.user); // email
-
     let user = await User.findOne({ email: req.user }).select('email fullName profilePic');
 
     if (user) {
@@ -23,9 +22,7 @@ export const updateProfile = async (req, res) => {
 
     if (fullName) {
         try {
-            console.log("req.user: ", req.user);
             let updatedUser = await User.findOneAndUpdate({ email: req.user }, { fullName: fullName }, { new: true });
-            console.log("updated user");
             return res.status(200).json({ message: "Profile updated successfully" });
         } catch (err) {
             return res.status(500).json({ message: "error in updating fullName" })
@@ -34,12 +31,10 @@ export const updateProfile = async (req, res) => {
 
     if (profilePic) {
         try {
-            console.log("req.user in profile update: ", req.user);
             let response = await User.findOneAndUpdate({ email: req.user }, { profilePic: profilePic }, { new: true });
-            console.log("updated profile: ", response);
             return res.status(200).json({ messsage: "updated profile successfully" });
         } catch (error) {
-            console.log("error in updateProfile: ", error);
+            console.error("error in updateProfile: ", error);
             return res.status(500).json({ message: "Error in updating profile" });
         }
     }
@@ -77,7 +72,9 @@ export const getContacts = async (req, res) => {
 
             return ({
                 email: contact.email,
+                type: "direct",
                 fullName: contact.fullName,
+                name: contact.fullName,
                 profilePic: contact.profilePic,
                 publicKey: contact.publicKey,
                 online: contact.status === "online" ? true : false,
@@ -97,7 +94,7 @@ export const getContacts = async (req, res) => {
 
         return res.status(200).json({ contacts: data, message: "Fetched contacts" });
     } catch (error) {
-        console.log(error);
+        console.error(error);
         return res.status(500).json({ message: "sever side error while fetching contacts" });
     }
 }
@@ -117,7 +114,7 @@ export const fetchFor = async (req, res) => {
         return res.status(200).json({ result: result });
 
     } catch (error) {
-        console.log(error);
+        console.error(error);
         return res.status(500).json({ message: "Server side error while fetching for" + req.params.id })
     }
 };
@@ -138,14 +135,13 @@ export const fetchRequests = async (req, res) => {
         const sentTousers = await User.find({ email: { $in: sentToEmail } })
             .select('email fullName profilePic');
 
-        console.log(sentTousers);
         return res.status(200).json({
             requests: users,
             sentReq: sentTousers,
             message: "Fetched requests successfully"
         });
     } catch (error) {
-        console.log(error);
+        console.error(error);
         return res.status(500).json({ message: "Sever side error while finding request" })
     }
 }
@@ -154,18 +150,28 @@ export const sendRequest = async (req, res) => {
     const loggedIn = req.user;  // this user sends to 
     const sendTo = req.body.email // this user
     try {
+        if (loggedIn === sendTo) {
+            return res.status(400).json({ message: "Cannot send request to yourself" });
+        }
         let user = await User.findOne({ email: sendTo }); // to user
         // check this user
         if (user) {
-            console.log("Sending request from " + loggedIn + " to " + sendTo);
-            await Request.insertOne({ user: sendTo, sentBy: loggedIn });
+            const existingContact = await Contacts.findOne({ user: loggedIn, contact: sendTo });
+            if (existingContact) {
+                return res.status(409).json({ message: "Contact already exists" });
+            }
+            const existingRequest = await Request.findOne({ user: sendTo, sentBy: loggedIn });
+            if (existingRequest) {
+                return res.status(409).json({ message: "Request already sent" });
+            }
+            await Request.create({ user: sendTo, sentBy: loggedIn });
             return res.status(200).json({ message: "Sent request successfully" });
         }
         else {
             return res.status(404).json({ message: "User not found!" });
         }
     } catch (error) {
-        console.log(error);
+        console.error(error);
         return res.status(500).json({ message: "Sever side error while sending request" })
     }
 }
@@ -192,12 +198,13 @@ export const acceptRequest = async (req, res) => {
         await Promise.all([
             Contacts.create({ user: loggedIn, contact: acceptFor, chatId }),
             Contacts.create({ user: acceptFor, contact: loggedIn, chatId }),
+            ensureDirectConversation(loggedIn, acceptFor),
         ]);
 
         await Request.deleteOne({ user: loggedIn, sentBy: acceptFor });
         return res.status(200).json({ message: "Accepted request successfully" });
     } catch (error) {
-        console.log(error);
+        console.error(error);
         return res.status(500).json({ message: "Server side error while accepting request" })
     }
 }
@@ -245,10 +252,11 @@ export const deleteContact = async (req, res) => {
             { user: toDelete, contact: loggedIn }
         ]
     });
-    let delMsgs=await Messages.deleteMany({chatId:chatId});
+    await Chat.deleteOne({chatId:chatId});
+    await Messages.deleteMany({chatId:chatId});
     return res.status(200).json({message:"deleted succesfully"});
     } catch (error) {
-        console.log(error);
+        console.error(error);
         return res.status(500).json({message:"server side error while deleting"});
     }
 }

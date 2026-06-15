@@ -1,32 +1,22 @@
 import { decryptWithAES } from "./Encryption";
+import { apiRequest } from "./api";
 
-export const loadConversation = async (email, cursor = null, limit = 20) => {
+export const loadConversation = async (conversationId, cursor = null, limit = 20) => {
   const params = new URLSearchParams();
-  params.append('limit', limit);
-  if (cursor) params.append('cursor', cursor);
+  params.append("limit", limit);
+  if (cursor) params.append("cursor", cursor);
 
-  const res = await fetch(`http://localhost:3000/api/chat/inbox/${email}/messages?${params.toString()}`, {
-    method: 'GET',
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-    }
-  });
-
-  const data = await res.json();
-  if (res.status === 200) {
-    return data;
-  }
-
-  return null;
+  return apiRequest(`/api/conversations/${encodeURIComponent(conversationId)}/messages?${params.toString()}`);
 };
 
-
-export const decryptAll = (messages, sharedSecret) => {
-  let decrypted=[];
-  for(let i=0;i<messages.length;i++) {
-    let message=JSON.parse(decryptWithAES(messages[i].message,sharedSecret));
-    decrypted.push({_id:messages[i]._id,message:message,sender:messages[i].sender});
-  };
+export const decryptAll = (messages, getSecretForMessage) => {
+  const decrypted = [];
+  for (let i = 0; i < messages.length; i++) {
+    const sharedSecret = typeof getSecretForMessage === "function"
+      ? getSecretForMessage(messages[i])
+      : getSecretForMessage;
+    const parsedMessage = JSON.parse(decryptWithAES(messages[i].message, sharedSecret));
+    decrypted.push({ _id: messages[i]._id, message: parsedMessage, sender: messages[i].sender });
+  }
   return decrypted;
 };

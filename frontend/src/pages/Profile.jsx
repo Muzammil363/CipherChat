@@ -14,9 +14,12 @@ const Profile = () => {
 
   useEffect(() => {
     async function loadData() {
-      let data = await fetchProfile();
-      console.log("setting user: ",data);
-      setUser(data.profile);
+      try {
+        let data = await fetchProfile();
+        setUser(data.profile);
+      } catch (error) {
+        setUser({});
+      }
     }
     loadData();
   }, [reFetch]);

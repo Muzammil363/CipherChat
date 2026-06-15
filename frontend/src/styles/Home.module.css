@@ -661,3 +661,34 @@
 .hidden {
   display: none;
 }
+
+.groupForm {
+  padding: 12px 20px;
+  border-bottom: 1px solid rgba(26, 26, 46, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.groupMemberList {
+  max-height: 160px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.groupMemberItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: #1a1a2e;
+}
+
+.senderName {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.78rem;
+  color: #4b5563;
+}

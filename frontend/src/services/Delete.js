@@ -1,35 +1,22 @@
-export const deleteContact=async (email)=> {
-    let res=await fetch(`http://localhost:3000/user/contact/${email}`,{
-        method:'DELETE',
-        credentials:'include',
-        headers:{
-            "content-type":"application/json"
-        }
-    });
-    if(res.status==200) return true;
-    return false;
-}
+import { apiRequest } from "./api";
 
-export const clearChat=async (email) => {
-    let res=await fetch(`http://localhost:3000/api/chat/clearChat/${email}`,{
-        method:'DELETE',
-        credentials:'include',
-        headers: {
-            "content-type":"application/json"
-        }
-    })
-    if(res.status==200) return true;
-    return false;
-}
-
-export const deleteMessage=async (id)=>{
-    let res=await fetch(`http://localhost:3000/api/chat/deleteMessage/${id}`,{
-        method:'DELETE',
-        credentials:'include',
-        headers:{
-            "content-type":"application/json"
-        }
+export const deleteContact = async (email) => {
+    await apiRequest(`/user/contact/${encodeURIComponent(email)}`, {
+        method: "DELETE"
     });
-    if(res.status==200) return true;
-    return false;
-}
+    return true;
+};
+
+export const clearChat = async (email) => {
+    await apiRequest(`/api/chat/clearChat/${encodeURIComponent(email)}`, {
+        method: "DELETE"
+    });
+    return true;
+};
+
+export const deleteMessage = async (id) => {
+    await apiRequest(`/api/chat/deleteMessage/${encodeURIComponent(id)}`, {
+        method: "DELETE"
+    });
+    return true;
+};

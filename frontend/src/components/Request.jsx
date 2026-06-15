@@ -16,10 +16,13 @@ const Request = () => {
     useEffect(() => {
         // This use effect is to fetch user requests
         async function loadRequests() {
-            let data=await findRequests();
-            console.log("data: ",data);
-            setReceivedRequests(data.requests); 
-            setSentRequests(data.sentReq);
+            try {
+                let data=await findRequests();
+                setReceivedRequests(data.requests); 
+                setSentRequests(data.sentReq);
+            } catch (error) {
+                toast.error(error.message);
+            }
         }
         loadRequests();
     }, [activeTab]);
@@ -41,8 +44,12 @@ const Request = () => {
         }
 
         async function loadData() {
-            let data=await findUser(debouncedTerm);  
-            setSearchResults(data.result);
+            try {
+                let data=await findUser(debouncedTerm);  
+                setSearchResults(data);
+            } catch (error) {
+                toast.error(error.message);
+            }
         }
         loadData();
     },[debouncedTerm])
@@ -62,7 +69,6 @@ const Request = () => {
         let res=await acceptUser(requestId);
         if(res) {
             setReceivedRequests(prev => prev.filter(req => req.email!== requestId));
-            console.log('Accepted request:', requestId);
             toast.success("Accedped "+requestId+"'s request");
             return ;
         }
@@ -82,7 +88,6 @@ const Request = () => {
         let res=await cancelRequest(requestId);
         if(res) {
             setSentRequests(prev => prev.filter(req => req.email !== requestId));
-            console.log('Cancelled request:', requestId);
             toast.success("Canceled Request successfully");
             return ;
         }
@@ -91,8 +96,12 @@ const Request = () => {
     };
 
     const handleSendRequest = async (userId) => {
-        console.log('Sent request to user:', userId);
-        await sendRequest(userId);
+        try {
+            await sendRequest(userId);
+            toast.success("Request sent");
+        } catch (error) {
+            toast.error(error.message);
+        }
     };
 
     return (

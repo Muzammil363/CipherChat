@@ -1,15 +1,34 @@
-import React from 'react'
-import { useSelector } from 'react-redux'
-import { Outlet } from 'react-router-dom';
-import { useNavigate,Navigate } from 'react-router-dom';
+import React, { useEffect } from 'react'
+import { useDispatch, useSelector } from 'react-redux'
+import { Navigate, Outlet } from 'react-router-dom';
+import { authActions } from '../store';
+import { apiRequest } from '../services/api';
 
 function ProtectedRoute() {
-    const isAuthenticated=useSelector(state=>state.auth.isAuthenticated);
-    const navigate=useNavigate();
+  const dispatch = useDispatch();
+  const { isAuthenticated, isChecking } = useSelector(state => state.auth);
 
-  return (
-    isAuthenticated?<Outlet/>:<Navigate to={'/auth'} replace/>
-  )
+  useEffect(() => {
+    let active = true;
+    async function validate() {
+      try {
+        const data = await apiRequest('/api/auth/validate');
+        if (active) dispatch(authActions.login({ user: data.user }));
+      } catch (error) {
+        if (active) dispatch(authActions.logout());
+      }
+    }
+    validate();
+    return () => {
+      active = false;
+    };
+  }, [dispatch]);
+
+  if (isChecking) {
+    return null;
+  }
+
+  return isAuthenticated ? <Outlet /> : <Navigate to={'/auth'} replace />;
 }
 
 export default ProtectedRoute
