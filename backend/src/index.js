@@ -18,13 +18,19 @@ configDotenv();
 
 connectMongo();
 const app=express();
+const allowedMethods = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"];
+const corsOptions = {
+  origin: process.env.FRONTEND_ORIGIN || 'http://localhost:5173',
+  credentials: true,
+  methods: allowedMethods,
+  allowedHeaders: ["Content-Type", "Authorization"]
+};
+
 app.use(express.json());
 app.use(express.urlencoded({extended:true}));
 app.use(cookieParser());
-app.use(cors({
-  origin: process.env.FRONTEND_ORIGIN || 'http://localhost:5173',
-  credentials: true
-}));
+app.use(cors(corsOptions));
+app.options(/.*/, cors(corsOptions));
 
 app.use("/api/auth",authRouter);
 app.use('/user',userRouter);
@@ -46,9 +52,8 @@ const server=app.listen(PORT,()=>{
 
 export const io = new Server(server, {
   cors: {
-    origin: process.env.FRONTEND_ORIGIN || "http://localhost:5173",
-    methods: ["GET", "POST"],
-    credentials: true
+    ...corsOptions,
+    methods: allowedMethods
   }
 });
 
@@ -61,6 +66,7 @@ const readCookie = (cookieHeader = "", name) => {
       ?.split("=")[1];
 };
 
+// Authenticating the socket connection using JWT token from cookies
 io.use((socket, next) => {
     const token = readCookie(socket.handshake.headers.cookie, "authToken");
     if (!token) return next(new Error("No token provided"));

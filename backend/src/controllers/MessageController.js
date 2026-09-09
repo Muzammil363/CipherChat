@@ -10,10 +10,12 @@ export const getMessagesForId = async (req, res) => {
     try {
         const chatId = generateChatId(email, req.user);
         const conversation = await Chat.findOne({ chatId });
+        // Conversation contains meta data of chat like chatId, members,unreadCounts, type
         if (!conversation || !conversation.members.includes(req.user)) {
             return res.status(200).json({ messages: [], nextCursor: null });
         }
 
+        // Building query to fetch messages with cursor
         const query = { chatId };
         if (cursor) {
             query._id = { $lt: cursor };
@@ -22,7 +24,8 @@ export const getMessagesForId = async (req, res) => {
         const messages = await Messages.find(query)
             .sort({ _id: -1 })
             .limit(parseInt(limit));
-
+        
+        // toClientMessage function: It strips out internal database noise and other users' encrypted payloads, returning a clean message object to send back over the HTTP response.
         return res.status(200).json({
             messages: messages.map(message => toClientMessage(message, req.user)),
             nextCursor: messages.length ? messages[messages.length - 1]._id : null,
@@ -45,6 +48,8 @@ export const sendMessageForId = async (req, res) => {
         }
 
         const conversation = await ensureDirectConversation(sentBy, sendTo);
+
+        // Creates a message record
         await saveConversationMessage({
             chatId: conversation.chatId,
             sender: sentBy,

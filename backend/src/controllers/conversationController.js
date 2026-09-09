@@ -136,11 +136,12 @@ export const createGroup = async (req, res) => {
 export const getGroupMembers = async (req, res) => {
     try {
         const conversation = await Chat.findOne({ chatId: req.params.id, type: "group" });
-        if (!assertConversationMember(conversation, req.user)) {
+        if (!assertConversationMember(conversation, req.user)) { // check if the user is a member of the group and not left
             return res.status(404).json({ message: "Group not found" });
         }
 
         const activeMembers = conversation.members.filter(member => !conversation.leftMembers.includes(member));
+        
         const members = await User.find({ email: { $in: activeMembers } })
             .select("email fullName profilePic publicKey status lastSeen");
 
@@ -225,7 +226,7 @@ export const sendConversationMessage = async (req, res) => {
 
 export const ensureDirectConversation = async (userA, userB) => {
     const chatId = generateChatId(userA, userB);
-    let chat = await Chat.findOne({ chatId });
+    let chat = await Chat.findOne({ chatId }); // Conversation metadata
     if (!chat) {
         chat = await Chat.create({
             chatId,

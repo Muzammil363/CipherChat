@@ -25,6 +25,8 @@ const handleConversationSend = async (socket, data) => {
     if (!chatId) return;
 
     const clientMessageId = String(data.clientMessageId || data.time || data.mid || Date.now());
+
+    // to save the message as a PendingMessage in MongoDB and assign target recipients.
     const result = await queueConversationMessage({
         chatId,
         sender,
@@ -33,6 +35,7 @@ const handleConversationSend = async (socket, data) => {
         mid: data.time || data.mid || clientMessageId
     });
 
+    // Emits message:accepted back to the sender's client so the sender knows the server received it (single tick / sent indicator).
     socket.emit("message:accepted", {
         clientMessageId,
         serverId: String(result.message._id),
@@ -192,14 +195,22 @@ export const socketActions = (socket) => {
         { new: true }
     ).catch(error => console.error("Failed to mark socket user online", error));
 
+    // offline synchronization functions that run automatically immediately when a user connects/reconnects to Socket.IO
+    // Queries MongoDB for all undelivered messages: PendingMessage.find({ pendingRecipients: socket.email })
     emitPendingMessages(socket).catch(error => {
         socket.emit("message:error", { message: error.message || "Unable to load pending messages" });
     });
 
+    // While User A was offline, User B read User A's messages. Because User A was offline, the real-time "seen" checkmarks couldn't be sent
+    // mits a message:seen:update socket event to User A so their client updates the UI checkmarks
     emitPendingSeenReceipts(socket).catch(error => {
         socket.emit("message:error", { message: error.message || "Unable to load seen receipts" });
     });
 
+    // When a user sends a message, the server saves it as a PendingMessage in MongoDB and emits a message:receive event to all recipients who are online. 
+    // When a recipient receives the message, they emit a message:saved event back to the server,
+    //  which updates the PendingMessage and emits a message:delivered event to the sender.
+    //  When a recipient reads the message, they emit a message:seen event back to the server, which updates the SeenReceipt and emits a message:seen:update event to the sender.
     socket.on("message:send", async (data) => {
         try {
             await handleConversationSend(socket, data);
@@ -272,6 +283,7 @@ export const socketActions = (socket) => {
         }
     });
 
+    // set user offline and update lastSeen timestamp
     socket.on("disconnect", async () => {
         if (socketMap.get(socket.email) === socket.id) {
             socketMap.delete(socket.email);

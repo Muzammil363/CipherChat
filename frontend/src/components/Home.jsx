@@ -215,6 +215,7 @@ const Home = () => {
         status: 'delivered'
       });
 
+      // For double tick
       if (saved?.serverId) {
         socket?.emit('message:saved', { serverId: saved.serverId, chatId: receivedChatId });
       }
@@ -529,6 +530,7 @@ const Home = () => {
 
   const sendPreparedMessage = async (plainMessage) => {
     if (!selectedConversation || !socket) return;
+
     const members = await activeMembersForSelected();
     const encryptedFor = encryptForMembers(plainMessage, members);
     const clientMessageId = String(plainMessage.id);
@@ -822,6 +824,7 @@ const Home = () => {
             <button className={styles.newChatBtn} onClick={() => setShowGroupForm(prev => !prev)}>+</button>
           </div>
 
+          {/* Modal to create group chats */}
           {showGroupForm && (
             <form className={styles.groupForm} onSubmit={handleCreateGroup}>
               <input
@@ -847,6 +850,7 @@ const Home = () => {
             </form>
           )}
 
+          {/* Search bar to filter chats */}
           <div className={styles.searchBar}>
             <input
               type="text"

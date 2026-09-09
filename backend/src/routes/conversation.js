@@ -15,8 +15,13 @@ const messageRateLimit = createRateLimit({ windowMs: 60_000, max: 120 });
 
 router.use(authMiddleware);
 
-router.get("/conversations", getConversations);
-router.get("/conversations/:id/messages", getConversationMessages);
+// loads all conversations for the sidebar (direct + groups) most recent first
+router.get("/conversations", getConversations); 
+
+// Primary route to retrive group chat messages, directly takes group chat Id chatId: `group_XXXXX`,
+router.get("/conversations/:id/messages", getConversationMessages); 
+
+
 router.post("/conversations/:id/messages", messageRateLimit, sendConversationMessage);
 
 router.post("/groups", createGroup);
